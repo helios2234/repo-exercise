@@ -1,0 +1,389 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:share_plus/share_plus.dart';
+
+void main() {
+  runApp(const StudentGradeCalculatorApp());
+}
+
+/// Modèle de données pour un Étudiant.
+class Student {
+  final int id;
+  final String name;
+  final int? score;
+
+  Student({required this.id, required this.name, this.score});
+}
+
+/// États de navigation de l'application.
+enum Screen { welcome, calculator }
+
+/// Logique de calcul du Grade (Note).
+String getGrade(int score) {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+/// Formate le message de résultat d'un étudiant pour le partage.
+String formatStudentGrade(Student student) {
+  if (student.score != null) {
+    return "${student.name} marqué ${student.score} : Grade ${getGrade(student.score!)}";
+  }
+  return "Pas de score pour ${student.name}";
+}
+
+class StudentGradeCalculatorApp extends StatelessWidget {
+  const StudentGradeCalculatorApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Grade Master Pro',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        colorSchemeSeed: Colors.blue,
+      ),
+      home: const MainNavigation(),
+    );
+  }
+}
+
+class MainNavigation extends StatefulWidget {
+  const MainNavigation({super.key});
+
+  @override
+  State<MainNavigation> createState() => _MainNavigationState();
+}
+
+class _MainNavigationState extends State<MainNavigation> {
+  Screen _currentScreen = Screen.welcome;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _currentScreen == Screen.welcome,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _currentScreen == Screen.calculator) {
+          setState(() => _currentScreen = Screen.welcome);
+        }
+      },
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 500),
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        child: _currentScreen == Screen.welcome
+            ? WelcomeScreen(onStart: () => setState(() => _currentScreen = Screen.calculator))
+            : GradeCalculatorScreen(onBack: () => setState(() => _currentScreen = Screen.welcome)),
+      ),
+    );
+  }
+}
+
+class WelcomeScreen extends StatelessWidget {
+  final VoidCallback onStart;
+  const WelcomeScreen({super.key, required this.onStart});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.home,
+                size: 64,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Text(
+              "Grade Master Pro",
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    fontWeight: FontWeight.black,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Gérez les notes de vos étudiants avec élégance et simplicité. Calculez les grades instantanément et partagez les résultats.",
+              style: Theme.of(context).textTheme.bodyLarge,
+              textAlign: TextAlign.center,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 48),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton(
+                onPressed: onStart,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  shape: const StadiumBorder(),
+                ),
+                child: const Text(
+                  "Commencer",
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "Version 2.0 • by TGB",
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class GradeCalculatorScreen extends StatefulWidget {
+  final VoidCallback onBack;
+  const GradeCalculatorScreen({super.key, required this.onBack});
+
+  @override
+  State<GradeCalculatorScreen> createState() => _GradeCalculatorScreenState();
+}
+
+class _GradeCalculatorScreenState extends State<GradeCalculatorScreen> {
+  final List<Student> _students = [
+    Student(id: 1, name: "Alice", score: 95),
+    Student(id: 2, name: "Bob", score: 82),
+    Student(id: 3, name: "Charlie", score: null),
+    Student(id: 4, name: "Diana", score: 47),
+  ];
+
+  Future<void> _pickFile() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(type: FileType.any);
+    if (result != null) {
+      try {
+        final file = File(result.files.single.path!);
+        final lines = await file.readAsLines();
+        List<Student> newEntries = [];
+
+        for (var i = 0; i < lines.length; i++) {
+          final line = lines[i];
+          final parts = line.split(",");
+          if (parts.isNotEmpty) {
+            final name = parts[0].trim();
+            final score = parts.length > 1 ? int.tryParse(parts[1].trim()) : null;
+            if (name.isNotEmpty) {
+              newEntries.add(Student(
+                id: DateTime.now().millisecondsSinceEpoch + i,
+                name: name,
+                score: score,
+              ));
+            }
+          }
+        }
+
+        if (newEntries.isNotEmpty) {
+          setState(() => _students.addAll(newEntries));
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("${newEntries.length} étudiants importés")),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Erreur lors de l'importation")),
+          );
+        }
+      }
+    }
+  }
+
+  void _shareText(String text) {
+    Share.share(text);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Calculateur", style: TextStyle(fontWeight: FontWeight.bold)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: widget.onBack,
+        ),
+        actions: [
+          IconButton(icon: const Icon(Icons.upload_file), onPressed: _pickFile),
+          IconButton(
+            icon: const Icon(Icons.send),
+            onPressed: () {
+              final shareContent = "📊 Rapport global des Grades :\n\n" +
+                  _students.map((s) => formatStudentGrade(s)).join("\n");
+              _shareText(shareContent);
+            },
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showAddDialog(),
+        child: const Icon(Icons.add),
+      ),
+      body: _students.isEmpty
+          ? const Center(child: Text("Aucun étudiant. Ajoutez-en un !"))
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: _students.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final student = _students[index];
+                return StudentCard(
+                  student: student,
+                  onDelete: () => setState(() => _students.remove(student)),
+                  onShare: () => _shareText(formatStudentGrade(student)),
+                );
+              },
+            ),
+    );
+  }
+
+  void _showAddDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AddStudentDialog(
+        onAdd: (name, score) {
+          setState(() {
+            _students.add(Student(
+              id: DateTime.now().millisecondsSinceEpoch,
+              name: name,
+              score: score,
+            ));
+          });
+        },
+      ),
+    );
+  }
+}
+
+class AddStudentDialog extends StatefulWidget {
+  final Function(String, int?) onAdd;
+  const AddStudentDialog({super.key, required this.onAdd});
+
+  @override
+  State<AddStudentDialog> createState() => _AddStudentDialogState();
+}
+
+class _AddStudentDialogState extends State<AddStudentDialog> {
+  final _nameController = TextEditingController();
+  final _scoreController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Nouvel Étudiant"),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: "Nom", border: OutlineInputBorder()),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _scoreController,
+            decoration: const InputDecoration(labelText: "Score (facultatif)", border: OutlineInputBorder()),
+            keyboardType: TextInputType.number,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text("Annuler")),
+        ElevatedButton(
+          onPressed: _nameController.text.isEmpty
+              ? null
+              : () {
+                  widget.onAdd(_nameController.text, int.tryParse(_scoreController.text));
+                  Navigator.pop(context);
+                },
+          child: const Text("Ajouter"),
+        ),
+      ],
+    );
+  }
+}
+
+class StudentCard extends StatelessWidget {
+  final Student student;
+  final VoidCallback onDelete;
+  final VoidCallback onShare;
+
+  const StudentCard({
+    super.key,
+    required this.student,
+    required this.onDelete,
+    required this.onShare,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final statusText = student.score != null
+        ? "Score : ${student.score} • Grade : ${getGrade(student.score!)}"
+        : "Pas de score pour ${student.name}";
+
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    student.name,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    statusText,
+                    style: TextStyle(
+                      color: student.score == null
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.share, color: Colors.blue),
+              onPressed: onShare,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red),
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
